@@ -85,6 +85,3 @@ def analyze(S, K, T, r, sigma):
             S, d1, d2, sigma, T, K, r, option_type="put", time_unit="day"
         ),
     }
-
-
-print(analyze(200, 210, 0.25, 0.05, 0.30))
