@@ -1,18 +1,22 @@
 # Black-Scholes Options Pricing Engine
 
-A from-scratch implementation of the Black-Scholes-Merton (BSM) pricing model built to understand quantitative finance through the lens of Calculus 3 and applied mathematics. This project is the foundation of a larger quant data engineering toolchain.
-
----
-
-## Why This Project Exists
-
-Options pricing is one of the most direct applications of multivariable calculus in the real world. The Greeks are partial derivatives. The model is a PDE solution. Finite differences are numerical approximations of those derivatives. This project exists to make that math tangible in code.
-
-The end goal is a quant data engineering pipeline — market data ingestion, options analysis at scale, and portfolio optimization. This calculator is the mathematical core of that system.
+A from-scratch implementation of the Black-Scholes-Merton (BSM) pricing model built to understand quantitative finance through the lens of applied mathematics — specifically how multivariable calculus and PDEs map directly to real financial instruments. Connects to live market data to back-solve implied volatility and surface potential mispricings against historical volatility.
 
 ---
 
 ## The Math Story
+
+### Origins
+
+In 1900, Louis Bachelier published his doctoral thesis _Théorie de la Spéculation_ —
+the first mathematical treatment of random walk applied to financial markets. He
+modeled price movements as a stochastic process five years before Einstein's paper
+on Brownian motion. The work was largely ignored for six decades until Paul Samuelson
+rediscovered it in the 1950s and formalized it as geometric Brownian motion — the
+foundation BSM is built on.
+
+Black, Scholes, and Merton published the pricing model in 1973. Merton and Scholes
+were awarded the Nobel Prize in Economics in 1997.
 
 ### What Problem BSM Solves
 
@@ -37,8 +41,6 @@ Assumptions
 - Log-normal returns — fat tails exist
 - Continuous trading, no transaction costs — not realistic
 - No dividends — requires adjustment for dividend-paying stocks
-
-Knowing where the model lies to you is the actual skill.
 
 ### The Closed Form Solution
 
@@ -66,14 +68,7 @@ Where `N()` is the cumulative standard normal distribution.
 | Risk-free rate   | `r`    | Treasury yield — return you'd get risk-free                      |
 | Volatility       | `σ`    | Implied volatility — market's estimate of future price movement  |
 
-`T` is a **duration**, not a timestamp. You compute it from dates:
-
-```python
-from datetime import date
-
-def time_to_maturity(expiration: date) -> float:
-    return (expiration - date.today()).days / 365
-```
+In live mode, `S`, `r`, and `T` are fetched automatically. `r` is pulled from the appropriate Treasury yield based on time to expiration — 3-month T-bill for short-dated contracts, 5-year for medium, 10-year for long.
 
 ---
 
@@ -84,15 +79,17 @@ def time_to_maturity(expiration: date) -> float:
 - **Call price** — fair premium for the right to _buy_ at strike K
 - **Put price** — fair premium for the right to _sell_ at strike K
 
+All prices are quoted per share. Market convention is 100 shares per contract.
+
 ### The Greeks (Risk Dimensions)
 
-| Greek | Derivative | Meaning                                                |
-| ----- | ---------- | ------------------------------------------------------ |
-| Delta | ∂C/∂S      | How much the price changes per $1 move in stock        |
-| Gamma | ∂²C/∂S²    | How fast delta itself is changing                      |
-| Theta | ∂C/∂t      | Value lost per day from time passing (always negative) |
-| Vega  | ∂C/∂σ      | Sensitivity to a change in volatility                  |
-| Rho   | ∂C/∂r      | Sensitivity to a change in interest rate               |
+| Greek | Derivative | Meaning                                         |
+| ----- | ---------- | ----------------------------------------------- |
+| Delta | ∂C/∂S      | How much the price changes per $1 move in stock |
+| Gamma | ∂²C/∂S²    | How fast delta itself is changing               |
+| Theta | ∂C/∂t      | Value lost per day from time passing            |
+| Vega  | ∂C/∂σ      | Sensitivity to a change in volatility           |
+| Rho   | ∂C/∂r      | Sensitivity to a change in interest rate        |
 
 Traders use Greeks for **risk management**, not just pricing. A market maker selling thousands of contracts needs to know total exposure if the market moves 2% tomorrow — that's delta. Greeks quantify each risk dimension independently.
 
@@ -102,14 +99,25 @@ Traders use Greeks for **risk management**, not just pricing. A market maker sel
 
 ```
 bsm/
-├── bsm.py          # All math functions — knows nothing about dataframes
+├── bsm.py          # All math functions — knows nothing about dataframes or market data
 ├── chain.py        # Options chain construction — knows nothing about math internals
+├── market.py       # Live market data fetching, IV back-solving, HV computation
+├── rich_out.py     # Terminal table rendering via rich
 ├── tests/
-│   └── test_bsm.py # pytest validation against known values
-└── main.py         # Entry point — orchestrates, displays results
+│   └── test_bsm.py # pytest validation against known values and finite difference verification
+└── main.py         # Entry point — manual mode and live mode
 ```
 
-Each file has one job. `bsm.py` computes math. `chain.py` organizes results. `main.py` calls both. This separation means adding Black-76 (futures pricing) later is just a new file, not a rewrite.
+Each file has one job. `bsm.py` computes math. `chain.py` organizes manual results. `market.py` handles everything external. `main.py` orchestrates both modes.
+
+---
+
+## Modes
+
+```bash
+python main.py manual   # run BSM across a synthetic price range with fixed inputs
+python main.py live     # pull live market data and analyze real options chains
+```
 
 ---
 
@@ -117,7 +125,7 @@ Each file has one job. `bsm.py` computes math. `chain.py` organizes results. `ma
 
 **Why `option_type` is a parameter, not two separate functions**
 
-Delta for calls is `N(d1)`. For puts it's `N(d1) - 1`. They share 90% of their logic. One function with a parameter is cleaner than two parallel functions that diverge by one line — especially when you're running these across thousands of contracts in a loop.
+Delta for calls is `N(d1)`. For puts it's `N(d1) - 1`. They share 90% of their logic. One function with a parameter is cleaner than two parallel functions that diverge by one line — especially when running these across thousands of contracts in a loop.
 
 **Why d2 takes d1 as input**
 
@@ -129,13 +137,21 @@ It's not a shortcut — that's the actual mathematical relationship. Expressing 
 
 **Theta time unit parameter**
 
-Theta from BSM is in per-year units. Traders think in per-day. `time_unit` parameter handles both without duplicating logic. Named `time_unit` rather than `filter` — `filter` is a Python builtin and shadowing builtins causes subtle bugs and confuses readers.
+Theta from BSM is in per-year units. Traders think in per-day. A `time_unit` parameter handles both without duplicating logic. Named `time_unit` rather than `filter` — `filter` is a Python builtin and shadowing builtins causes subtle bugs.
+
+**Why bid/ask midpoint is preferred over lastPrice**
+
+`lastPrice` reflects the most recent trade, which can be hours old for illiquid contracts. The bid/ask midpoint is a live estimate of fair value. The spread between bid and ask also signals liquidity — a wide spread means the contract trades infrequently and pricing is less reliable.
+
+**Why IV is back-solved rather than taken from the data provider**
+
+Using our own Newton-Raphson implementation against the actual BSM model guarantees consistency — the IV we compute is exactly the sigma that makes our model reprice the contract correctly. Provider-supplied IV may use different models or conventions.
 
 ---
 
 ## Finite Difference Verification
 
-The Greeks are derived analytically (closed form). They can be verified numerically using finite differences — the code approximation of a derivative from Calc 3:
+The Greeks are derived analytically (closed form). They are verified numerically using finite differences — the computational approximation of a derivative:
 
 ```
 f'(x) ≈ [f(x+h) - f(x-h)] / 2h
@@ -147,53 +163,32 @@ For example, numerical delta:
 numerical_delta = (call_price(S+h) - call_price(S-h)) / (2*h)
 ```
 
-This should match `N(d1)` exactly within floating point tolerance. If it does, the implementation is correct. This is how each Greek was verified before moving to the next.
+This matches `N(d1)` within floating point tolerance, confirming the implementation is correct. Each Greek was verified this way before moving to the next. These checks are encoded in the test suite and run with `pytest tests/ -v`.
 
 ---
 
-## Options Chain
+## Implied Volatility
 
-The chain evaluates all Greeks across a **range of stock prices** at a fixed strike. Strike is fixed in the contract — what moves is the underlying stock. So the interesting question is: _as stock price drifts, how does my fixed contract's value and risk change?_
-
-```python
-S_range = np.linspace(150, 250, 100)
-df = options_chain(S_range, K=210, T=0.25, r=0.05, sigma=0.30)
-```
-
-This produces a row per scenario — "if the stock were at this price, here's what everything looks like." A trader uses this as a **risk map** before entering a position.
-
-Key observations in the output:
-
-- Delta approaches 0.50 when stock price ≈ strike (at the money)
-- Gamma peaks near the strike — delta is most unstable there
-- Call price rises and put price falls as stock price increases
-
----
-
-## Implied Volatility (Next)
-
-Right now `σ` is an input. In practice you don't know the "true" volatility — the market gives you the contract price and you back-solve for the volatility it implies. There's no closed form for this, so it requires numerical root-finding (Newton-Raphson), using vega as the derivative:
+`σ` is back-solved from live market prices using Newton-Raphson, with vega as the derivative:
 
 ```
 σ_new = σ_old - (BSM_price(σ_old) - market_price) / vega(σ_old)
 ```
 
-This is where the project becomes a real analytical tool: compare implied volatility (what the market expects) against historical volatility (what the stock has actually done) to identify potential mispricings.
+This inverts the model: instead of computing a price from volatility, it extracts the volatility the market is pricing in. The solver guards against division by zero near expiry and deep out-of-the-money contracts where vega approaches zero.
 
 ---
 
-## Roadmap
+## IV vs Historical Volatility
 
-- [x] BSM pricing (call + put)
-- [x] All 5 Greeks
-- [x] Finite difference verification
-- [x] Options chain across S range
-- [ ] Implied volatility back-solving (Newton-Raphson)
-- [ ] Live market data via `yfinance`
-- [ ] Compare IV vs historical volatility
-- [ ] Gradient descent portfolio optimizer (Markowitz mean-variance)
-- [ ] Black-76 extension for commodities (oil, gold, silver)
-- [ ] AWS data pipeline for running analysis at scale
+Implied volatility reflects what the market _expects_ future movement to be. Historical volatility reflects what the stock _actually_ moved over the past 90 days, annualized:
+
+```python
+returns = np.log(hist["Close"] / hist["Close"].shift(1)).dropna()
+hv = returns.std() * np.sqrt(252)
+```
+
+The spread between IV and HV is the primary signal. When IV significantly exceeds HV, the market is pricing in more uncertainty than history suggests — the option is expensive relative to realized volatility. When IV is below HV, options are cheap.
 
 ---
 
@@ -202,4 +197,3 @@ This is where the project becomes a real analytical tool: compare implied volati
 - **Paul Wilmott on Quantitative Finance** — rigorous BSM derivation from PDEs
 - **Python for Finance** by Yves Hilpisch — practical numpy/scipy implementation patterns
 - **MIT 18.S096** (OpenCourseWare) — bridges Calc 3 level math to derivatives pricing
-- Drexel University BSM Calculator — used for output validation

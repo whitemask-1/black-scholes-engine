@@ -4,7 +4,7 @@ __pycache__/
 *.pyo
 .Python
 
-# Virtual environments
+# Environment 
 .venv/
 venv/
 env/
@@ -14,11 +14,11 @@ env/
 .coverage
 htmlcov/
 
-# Jupyter (if you explore data interactively)
+# Jupyter
 .ipynb_checkpoints/
 *.ipynb
 
-# Environment variables (never commit API keys or secrets)
+# Environment variables 
 .env
 .env.*
 
@@ -30,3 +30,5 @@ htmlcov/
 .vscode/
 *.swp
 *.swo
+
+NOTE.md

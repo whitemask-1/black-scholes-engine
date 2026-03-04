@@ -1,5 +1,13 @@
 import numpy as np
 from scipy.stats import norm
+from datetime import datetime
+
+
+# Find time till expiry
+def time_till_exp(date):
+    return (
+        datetime.strptime(date, "%Y-%m-%d").date() - datetime.today().date()
+    ).days / 365.25
 
 
 # first component of the closed form solution for the Black-Scholes equation
@@ -82,6 +90,13 @@ def theta(S, K, T, r, sigma, option_type="call", time_unit="year"):
     return None
 
 
+def rho(S, K, T, r, sigma, option_type="call"):
+    _, d2 = _compute_intermediates(S, K, T, r, sigma)
+    if option_type == "call":
+        return K * T * np.exp(-r * T) * norm.cdf(d2)
+    return -K * T * np.exp(-r * T) * norm.cdf(-d2)
+
+
 # Backsolve for implied volatility using the Newton Raphson Method
 def implied_volatility(
     market_price, S, K, T, r, option_type="call", tol=1e-6, max_iter=100
@@ -107,23 +122,20 @@ def analyze(S, K, T, r, sigma):
     return {
         "call": call_price(S, K, T, r, sigma),
         "put": put_price(S, K, T, r, sigma),
-        "call delta": delta(S, K, T, r, sigma, option_type="call"),
-        "put delta": delta(S, K, T, r, sigma, option_type="put"),
+        "call_delta": delta(S, K, T, r, sigma, option_type="call"),
+        "put_delta": delta(S, K, T, r, sigma, option_type="put"),
         "gamma": gamma(S, K, T, r, sigma),
         "vega": vega(S, K, T, r, sigma),
-        "call theta (yearly)": theta(
+        "call_theta_yearly": theta(
             S, K, T, r, sigma, option_type="call", time_unit="year"
         ),
-        "call theta (daily)": theta(
+        "call_theta_daily": theta(
             S, K, T, r, sigma, option_type="call", time_unit="day"
         ),
-        "put theta (yearly)": theta(
+        "put_theta_yearly": theta(
             S, K, T, r, sigma, option_type="put", time_unit="year"
         ),
-        "put theta (daily)": theta(
-            S, K, T, r, sigma, option_type="put", time_unit="day"
-        ),
+        "put_theta_daily": theta(S, K, T, r, sigma, option_type="put", time_unit="day"),
+        "call_rho": rho(S, K, T, r, sigma, option_type="call"),
+        "put_rho": rho(S, K, T, r, sigma, option_type="put"),
     }
-
-
-print(analyze(200, 210, 0.25, 0.05, 0.30))
