@@ -1,6 +1,6 @@
 import numpy as np
 from chain import options_chain
-from yahoo_integrate import analyze_batch
+from market import analyze_batch
 from rich_out import display_chain
 import sys
 

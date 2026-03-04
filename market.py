@@ -15,11 +15,18 @@ def get_risk_free_rate(T):
     return yf.Ticker(treasury).info["regularMarketPrice"] / 100
 
 
+def historical_volatility(ticker_symbol, period="90d"):
+    hist = yf.Ticker(ticker_symbol).history(period=period)
+    returns = np.log(hist["Close"] / hist["Close"].shift(1)).dropna()
+    return returns.std() * np.sqrt(252)
+
+
 def analyze_live(ticker_symbol, expiration_date):
     ticker = yf.Ticker(ticker_symbol)
     S = ticker.info["currentPrice"]
     T = time_till_exp(expiration_date)
     r = get_risk_free_rate(T)
+    hv = historical_volatility(ticker_symbol)
 
     chain = ticker.option_chain(expiration_date)
     calls = chain.calls[["strike", "lastPrice", "bid", "ask"]].copy()
@@ -34,6 +41,8 @@ def analyze_live(ticker_symbol, expiration_date):
             return None
         result = analyze(S, row["strike"], T, r, iv)
         result["iv"] = iv
+        result["hv"] = hv
+        result["iv_hv_spread"] = result["iv"] - hv
         return result
 
     return pd.DataFrame([r for r in calls.apply(compute_row, axis=1) if r is not None])
