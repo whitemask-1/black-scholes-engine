@@ -14,6 +14,25 @@ def get_risk_free_rate(T):
 
     return yf.Ticker(treasury).info["regularMarketPrice"] / 100
 
+def pick_expiration(ticker_symbol):
+    ticker = yf.Ticker(ticker_symbol)
+    expirations = ticker.options
+
+    if not expirations:
+        raise ValueError(f"No options available for {ticker_symbol}")
+
+    print(f"\nAvailable expirations for {ticker_symbol}:")
+    for i, exp in enumerate(expirations, 1):
+        print(f" {i}. {exp}")
+
+    while True:
+        try:
+            choice = int(input("\nSelect expiration (number): "))
+            if 1 <= choice <= len(expirations):
+                return expirations[choice -1]
+            print(f"Enter 1-{len(expirations)}")
+        except ValueError:
+            print("Enter a number")
 
 def historical_volatility(ticker_symbol, period="90d"):
     hist = yf.Ticker(ticker_symbol).history(period=period)

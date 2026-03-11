@@ -1,6 +1,6 @@
 import numpy as np
 from chain import options_chain
-from market import analyze_batch
+from market import analyze_live, pick_expiration
 from rich_out import display_chain
 import sys
 
@@ -16,11 +16,10 @@ def run_manual():
 
 
 def run_live():
-    symbols = ["AAPL", "TSLA"]
-    expiration_date = "2026-03-09"
-    data = analyze_batch(symbols, expiration_date)
-    for symbol, df in data.items():
-        display_chain(df, symbol)
+    symbol = input("Ticker Symbol: ").upper()
+    expiration_date = pick_expiration(symbol)
+    df = analyze_live(symbol, expiration_date)
+    display_chain(df, symbol)
 
 
 def main():
