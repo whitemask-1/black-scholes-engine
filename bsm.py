@@ -120,6 +120,7 @@ def implied_volatility(
 
 def analyze(S, K, T, r, sigma):
     return {
+        "strike": K,
         "call": call_price(S, K, T, r, sigma),
         "put": put_price(S, K, T, r, sigma),
         "call_delta": delta(S, K, T, r, sigma, option_type="call"),
