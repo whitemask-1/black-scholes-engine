@@ -2,6 +2,7 @@ import yfinance as yf
 from bsm import analyze, time_till_exp, implied_volatility
 import numpy as np
 import pandas as pd
+import ocaml_bridge
 
 
 def get_risk_free_rate(T):
@@ -40,31 +41,30 @@ def historical_volatility(ticker_symbol, period="90d"):
     return returns.std() * np.sqrt(252)
 
 
-def analyze_live(ticker_symbol, expiration_date):
+def analyze_live(ticker_symbol, expiration_date, option_type="call"):
     ticker = yf.Ticker(ticker_symbol)
     S = ticker.info["currentPrice"]
     T = time_till_exp(expiration_date)
     r = get_risk_free_rate(T)
     hv = historical_volatility(ticker_symbol)
-
     chain = ticker.option_chain(expiration_date)
-    calls = chain.calls[["strike", "lastPrice", "bid", "ask"]].copy()
-
-    calls["market_price"] = np.where(
-        calls["bid"] > 0, (calls["bid"] + calls["ask"]) / 2, calls["lastPrice"]
+    
+    options = chain.calls if option_type == "call" else chain.puts
+    options = options[["strike", "lastPrice", "bid", "ask"]].copy()
+    options["market_price"] = np.where(
+        options["bid"] > 0, (options["bid"] + options["ask"]) / 2, options["lastPrice"]
     )
 
     def compute_row(row):
-        iv = implied_volatility(row["market_price"], S, K=row["strike"], T=T, r=r)
-        if iv is None:
+        result = ocaml_bridge.analyze(S, row["strike"], T, r, row["market_price"], option_type)
+        if result is None:
             return None
-        result = analyze(S, row["strike"], T, r, iv)
-        result["iv"] = iv
         result["hv"] = hv
         result["iv_hv_spread"] = result["iv"] - hv
         return result
 
-    return pd.DataFrame([r for r in calls.apply(compute_row, axis=1) if r is not None])
+    results = [r for r in options.apply(compute_row, axis=1) if r is not None]
+    return pd.DataFrame(results)
 
 
 def analyze_batch(symbols, expiration_date):

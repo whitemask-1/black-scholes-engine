@@ -9,7 +9,7 @@ let gamma s k t r sigma =
 
 let vega s k t r sigma =
     let (d1, _) = Core.compute_d1_d2 s k t r sigma in
-    S *. Core.norm_pdf d1 *. sqrt t
+    s *. Core.norm_pdf d1 *. sqrt t
 
 let theta s k t r sigma option_type =
     let (d1, d2) = Core.compute_d1_d2 s k t r sigma in
@@ -17,7 +17,7 @@ let theta s k t r sigma option_type =
     if option_type = "call" then abs_float (term1 -. r *. k *. exp (-. r *. t) *. Core.norm_cdf d2)
     else abs_float (term1 +. r *. k *. exp (-. r *. t) *. Core.norm_cdf (-. d2))
 
-let theta_daily s k t r sigma =
+let theta_daily s k t r sigma option_type =
   theta s k t r sigma option_type /. 365.0
 
 let rho s k t r sigma option_type =

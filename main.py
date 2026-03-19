@@ -16,9 +16,10 @@ def run_manual():
 
 
 def run_live():
+    option_type = input("Call or Put Options: ").lower()
     symbol = input("Ticker Symbol: ").upper()
     expiration_date = pick_expiration(symbol)
-    df = analyze_live(symbol, expiration_date)
+    df = analyze_live(symbol, expiration_date, option_type)
     display_chain(df, symbol)
 
 

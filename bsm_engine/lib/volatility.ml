@@ -4,8 +4,8 @@ let implied_volatility ?(option_type="call") ?(tol=1e-6) ?(max_iter=100) market_
   let i = ref 0 in
   while !i < max_iter && !result = None do
     let price = if option_type = "call"
-      then Pricing.bs_call s k t !sigma r
-      else Pricing.bs_put s k t !sigma r
+      then Pricing.bs_call s k t r !sigma 
+      else Pricing.bs_put s k t r !sigma 
     in
     let v = Greeks.vega s k t r !sigma in
     if v < 1e-10 then
@@ -18,3 +18,6 @@ let implied_volatility ?(option_type="call") ?(tol=1e-6) ?(max_iter=100) market_
     i := !i + 1
   done;
   !result
+
+let iv_call = implied_volatility ~option_type: "call"
+let iv_put = implied_volatility ~option_type: "put"
