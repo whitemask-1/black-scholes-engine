@@ -38,3 +38,4 @@ _opam/
 bsm_engine/_build/
 .direnv/
 *.install
+_build/
