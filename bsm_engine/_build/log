@@ -1,0 +1,6 @@
+# dune init project bsm_engine
+# OCAMLPARAM: unset
+# Shared cache: enabled-except-user-rules
+# Shared cache location: /Users/p/.cache/dune/db
+# Workspace root: /Users/p/Documents/Code/black-scholes/bsm_engine
+# Auto-detected concurrency: 10

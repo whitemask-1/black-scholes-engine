@@ -1,0 +1,4 @@
+(executable
+ (public_name bsm_engine)
+ (name main)
+ (libraries bsm_engine))
