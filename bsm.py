@@ -11,19 +11,19 @@ def time_till_exp(date):
 
 
 # first component of the closed form solution for the Black-Scholes equation
-def compute_d1(S, K, T, r, sigma):
+def _compute_d1(S, K, T, r, sigma):
     return (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
 
 
 # second component of the closed form solution for the Black-Scholes equation found by abstracting the difference between the d1 and d2
-def compute_d2(d1, sigma, T):
+def _compute_d2(d1, sigma, T):
     return d1 - sigma * np.sqrt(T)
 
 
 # internal function for computing d1 and d2 within other functions to stop callers from managing intermediates
 def _compute_intermediates(S, K, T, r, sigma):
-    d1 = compute_d1(S, K, T, r, sigma)
-    d2 = compute_d2(d1, sigma, T)
+    d1 = _compute_d1(S, K, T, r, sigma)
+    d2 = _compute_d2(d1, sigma, T)
     return d1, d2
 
 
