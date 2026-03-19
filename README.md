@@ -121,6 +121,16 @@ python main.py live     # pull live market data and analyze real options chains
 
 ---
 
+## OCaml Compute Backend
+
+All pricing, Greeks, and IV solving are handled by the native OCaml binary. Python handles market data fetching, wrangling, and display which OCaml handles the math.
+
+### Why OCaml
+
+BSM math is computationally pure meaning there is no I/O or side effects, only floating point arithmetic over the options chain. OCaml compiles to native code and reuns the calculations much faster than CPython.
+
+The integration uses a subprocess bridge, Python spwans OCaml binary once per row, passes inputs, and reads back a JSON object
+
 ## Implementation Decisions
 
 **Why `option_type` is a parameter, not two separate functions**
@@ -146,6 +156,10 @@ Theta from BSM is in per-year units. Traders think in per-day. A `time_unit` par
 **Why IV is back-solved rather than taken from the data provider**
 
 Using our own Newton-Raphson implementation against the actual BSM model guarantees consistency — the IV we compute is exactly the sigma that makes our model reprice the contract correctly. Provider-supplied IV may use different models or conventions.
+
+**Why OCaml uses typed float operators**
+
+OCaml has no implicit numeric casting. + is integer addition, +. is float addition — mixing them is a compile error. For financial math this is a feature: a misplaced integer operation that silently truncates a float is caught at build time, not at runtime with wrong numbers.
 
 ---
 
