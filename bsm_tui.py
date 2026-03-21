@@ -8,6 +8,9 @@ from market import analyze_live
 
 
 class BSMApp(App):
+    TITLE = "BSM Options Chain"
+    BINDINGS = [("q", "quit", "Quit")]
+
     CSS = """
     #header {
         height: 3;
@@ -51,7 +54,7 @@ class BSMApp(App):
                 id="option-type",
                 value="call",
             )
-        yield DataTable(id="chain")
+        yield DataTable(id="chain", cursor_type="row")
         yield Label("", id="status")
 
     def on_mount(self) -> None:
