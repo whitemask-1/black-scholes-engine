@@ -54,24 +54,27 @@ class BSMApp(App):
         yield DataTable(id="chain")
         yield Label("", id="status")
 
+    def on_mount(self) -> None:
+        self._ticker_timer = None
+
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id != "ticker":
             return
-        try:
+        if self._ticker_timer is not None:
             self._ticker_timer.stop()
-        except AttributeError:
-            pass
-        self._ticker_timer = self.set_timer(0.5, self._fetch_expirations)
+        self._ticker_timer = self.set_timer(
+            0.5, lambda: self._fetch_expirations(event.value.strip().upper())
+        )
 
     @work(thread=True)
-    def _fetch_expirations(self) -> None:
-        symbol = self.query_one("#ticker", Input).value.strip().upper()
+    def _fetch_expirations(self, symbol: str) -> None:
         if not symbol:
             self.call_from_thread(self._clear_all)
             return
         try:
             expirations = yf.Ticker(symbol).options
-        except Exception:
+        except Exception as e:
+            self.call_from_thread(self._set_status, f"Error fetching {symbol}: {e}")
             self.call_from_thread(self._clear_all)
             return
         if expirations:
@@ -79,7 +82,10 @@ class BSMApp(App):
         else:
             self.call_from_thread(self._clear_all)
 
-    def _set_expirations(self, symbol: str, expirations: tuple) -> None:
+    def _set_expirations(self, symbol: str, expirations: tuple[str, ...]) -> None:
+        current = self.query_one("#ticker", Input).value.strip().upper()
+        if current != symbol:
+            return
         select = self.query_one("#expiration", Select)
         select.set_options([(e, e) for e in expirations])
         select.disabled = False
