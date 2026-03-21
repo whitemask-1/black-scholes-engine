@@ -1,7 +1,7 @@
 import numpy as np
 from chain import options_chain
 from market import analyze_live, pick_expiration
-from rich_out import display_chain
+from rich_out import display_manual_chain, display_live_chain
 import sys
 
 
@@ -12,7 +12,7 @@ def run_manual():
     sigma = 0.30
     S_range = np.linspace(150, 250, 100)
     df = options_chain(S_range, K, T, r, sigma)
-    display_chain(df, "Manual")
+    display_manual_chain(df)
 
 
 def run_live():
@@ -20,7 +20,7 @@ def run_live():
     symbol = input("Ticker Symbol: ").upper()
     expiration_date = pick_expiration(symbol)
     df = analyze_live(symbol, expiration_date, option_type)
-    display_chain(df, symbol)
+    display_live_chain(df, symbol, expiration_date, option_type)
 
 
 def main():
