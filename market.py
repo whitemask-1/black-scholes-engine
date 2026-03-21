@@ -15,6 +15,10 @@ def get_risk_free_rate(T):
 
     return yf.Ticker(treasury).info["regularMarketPrice"] / 100
 
+def find_ticker_stock_price(symbol: str) -> float:
+    stock = yf.Ticker(symbol)
+    return stock.fast_info["last_price"]
+
 def pick_expiration(ticker_symbol):
     ticker = yf.Ticker(ticker_symbol)
     expirations = ticker.options
