@@ -56,6 +56,7 @@ class BSMApp(App):
 
     def on_mount(self) -> None:
         self._ticker_timer = None
+        self._chain_generation = 0
 
     def on_unmount(self) -> None:
         if self._ticker_timer is not None:
@@ -114,10 +115,13 @@ class BSMApp(App):
             return
         symbol = self.query_one("#ticker", Input).value.strip().upper()
         option_type = self.query_one("#option-type", Select).value
-        self._fetch_chain(symbol, expiration, option_type)
+        if option_type is Select.BLANK or option_type is None:
+            return
+        self._chain_generation += 1
+        self._fetch_chain(symbol, expiration, option_type, self._chain_generation)
 
     @work(thread=True)
-    def _fetch_chain(self, symbol: str, expiration: str, option_type: str) -> None:
+    def _fetch_chain(self, symbol: str, expiration: str, option_type: str, generation: int) -> None:
         if not symbol:
             return
         self.call_from_thread(
@@ -126,11 +130,16 @@ class BSMApp(App):
         )
         try:
             df = analyze_live(symbol, expiration, option_type)
-            self.call_from_thread(self._populate_table, df)
+            self.call_from_thread(self._populate_table, df, generation)
         except Exception as e:
             self.call_from_thread(self._set_status, f"Error: {e}")
 
-    def _populate_table(self, df) -> None:
+    def _populate_table(self, df, generation: int) -> None:
+        if generation != self._chain_generation:
+            return
+        if df is None or df.empty:
+            self._set_status("No data returned")
+            return
         table = self.query_one("#chain", DataTable)
         table.clear(columns=True)
         for col in df.columns:
