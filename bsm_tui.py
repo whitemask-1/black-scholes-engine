@@ -1,7 +1,7 @@
 import yfinance as yf
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal
-from textual.widgets import DataTable, Input, Label, Select
+from textual.widgets import DataTable, Footer, Input, Label, Select
 from textual import work
 
 from market import analyze_live
@@ -56,6 +56,7 @@ class BSMApp(App):
             )
         yield DataTable(id="chain", cursor_type="row")
         yield Label("", id="status")
+        yield Footer()
 
     def on_mount(self) -> None:
         self._ticker_timer = None
