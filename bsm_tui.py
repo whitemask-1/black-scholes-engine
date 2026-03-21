@@ -57,6 +57,10 @@ class BSMApp(App):
     def on_mount(self) -> None:
         self._ticker_timer = None
 
+    def on_unmount(self) -> None:
+        if self._ticker_timer is not None:
+            self._ticker_timer.stop()
+
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id != "ticker":
             return
@@ -85,6 +89,7 @@ class BSMApp(App):
     def _set_expirations(self, symbol: str, expirations: tuple[str, ...]) -> None:
         current = self.query_one("#ticker", Input).value.strip().upper()
         if current != symbol:
+            self._set_status("")
             return
         select = self.query_one("#expiration", Select)
         select.set_options([(e, e) for e in expirations])
