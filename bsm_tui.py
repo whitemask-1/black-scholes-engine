@@ -106,6 +106,41 @@ class BSMApp(App):
     def _set_status(self, msg: str) -> None:
         self.query_one("#status", Label).update(msg)
 
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id not in ("expiration", "option-type"):
+            return
+        expiration = self.query_one("#expiration", Select).value
+        if expiration is Select.BLANK or expiration is None:
+            return
+        symbol = self.query_one("#ticker", Input).value.strip().upper()
+        option_type = self.query_one("#option-type", Select).value
+        self._fetch_chain(symbol, expiration, option_type)
+
+    @work(thread=True)
+    def _fetch_chain(self, symbol: str, expiration: str, option_type: str) -> None:
+        if not symbol:
+            return
+        self.call_from_thread(
+            self._set_status,
+            f"Loading {symbol} {option_type} chain for {expiration}...",
+        )
+        try:
+            df = analyze_live(symbol, expiration, option_type)
+            self.call_from_thread(self._populate_table, df)
+        except Exception as e:
+            self.call_from_thread(self._set_status, f"Error: {e}")
+
+    def _populate_table(self, df) -> None:
+        table = self.query_one("#chain", DataTable)
+        table.clear(columns=True)
+        for col in df.columns:
+            table.add_column(col.upper(), key=col)
+        for _, row in df.iterrows():
+            table.add_row(
+                *[f"{v:.4f}" if isinstance(v, float) else str(v) for v in row]
+            )
+        self._set_status(f"{len(df)} rows loaded")
+
 
 if __name__ == "__main__":
     BSMApp().run()
