@@ -118,7 +118,7 @@ class BSMApp(App):
         if option_type is Select.BLANK or option_type is None:
             return
         self._chain_generation += 1
-        self._fetch_chain(symbol, expiration, option_type, self._chain_generation)
+        self._fetch_chain(symbol, expiration, option_type, self._chain_generation)  # type: ignore[call-arg]
 
     @work(thread=True)
     def _fetch_chain(self, symbol: str, expiration: str, option_type: str, generation: int) -> None:
