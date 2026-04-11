@@ -123,11 +123,11 @@ python main.py live     # pull live market data and analyze real options chains
 
 ## OCaml Compute Backend
 
-All pricing, Greeks, and IV solving are handled by the native OCaml binary. Python handles market data fetching, wrangling, and display which OCaml handles the math.
+All pricing, Greeks, and IV solving are handled by the native OCaml binary. Python handles market data fetching, wrangling, and display while OCaml handles the math.
 
 ### Why OCaml
 
-BSM math is computationally pure meaning there is no I/O or side effects, only floating point arithmetic over the options chain. OCaml compiles to native code and reuns the calculations much faster than CPython.
+BSM math is computationally pure meaning there is no I/O or side effects, only floating point arithmetic over the options chain. OCaml compiles to native code and reuns the calculations much faster than CPython by reducing the operations that need to be done by the computer and avoiding the issues that come with arithmetic in garbage collected languages like Python.
 
 The integration uses a subprocess bridge, Python spwans OCaml binary once per row, passes inputs, and reads back a JSON object
 
