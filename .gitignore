@@ -13,6 +13,7 @@ env/
 .pytest_cache/
 .coverage
 htmlcov/
+snapshots/
 
 # Jupyter
 .ipynb_checkpoints/
@@ -39,3 +40,4 @@ bsm_engine/_build/
 .direnv/
 *.install
 _build/
+

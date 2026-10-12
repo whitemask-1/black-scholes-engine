@@ -1,5 +1,5 @@
 import yfinance as yf
-from bsm import analyze, time_till_exp, implied_volatility
+from bsm import time_till_exp 
 import numpy as np
 import pandas as pd
 import ocaml_bridge
