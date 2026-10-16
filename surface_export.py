@@ -99,6 +99,8 @@ def build_snapshot(
     min_days=7,
     max_spread_pct=0.5,
     min_open_interest=1,
+    min_rows=20,
+    min_expiries=2,
     iv_fn=ocaml_iv,
     ticker=None,
 ):
@@ -161,6 +163,14 @@ def build_snapshot(
         )
 
     df = pd.concat(frames, ignore_index=True)
+    if len(df) < min_rows or len(used_expiries) < min_expiries:
+        raise RuntimeError(
+            f"Only {len(df)} usable quote(s) across {len(used_expiries)} expiry(ies) for {symbol} "
+            f"(need >= {min_rows} quotes and >= {min_expiries} expiries for a surface). "
+            "The market is probably closed or just opening: bids/asks are mostly zero outside "
+            "regular hours (9:30-16:00 ET), and the first minutes after the open are thin. "
+            "Nothing was written; rerun later or use an existing snapshot."
+        )
     df["symbol"] = symbol
     df["asof"] = asof.isoformat()
     df["spot"] = S
@@ -220,6 +230,7 @@ def main():
     p.add_argument("--min-days", type=int, default=7)
     p.add_argument("--max-spread-pct", type=float, default=0.5)
     p.add_argument("--min-open-interest", type=int, default=1)
+    p.add_argument("--min-rows", type=int, default=20, help="refuse to write a snapshot with fewer usable quotes")
     p.add_argument("--no-ocaml", action="store_true", help="skip the OCaml reference IV column")
     a = p.parse_args()
 
@@ -231,6 +242,7 @@ def main():
         min_days=a.min_days,
         max_spread_pct=a.max_spread_pct,
         min_open_interest=a.min_open_interest,
+        min_rows=a.min_rows,
     )
     print(path)
 
