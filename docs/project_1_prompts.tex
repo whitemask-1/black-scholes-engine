@@ -1,0 +1,59 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{mathptmx}\usepackage[scaled=.92]{helvet}\usepackage{courier}\usepackage{microtype}\renewcommand{\familydefault}{\sfdefault}
+\usepackage{booktabs,tabularx,array,xcolor,graphicx,enumitem,fancyhdr,titlesec,listings,amsmath}
+\usepackage[hidelinks]{hyperref}
+\definecolor{accent}{HTML}{1F4E79}
+\definecolor{soft}{HTML}{EEF3F8}
+\definecolor{good}{HTML}{2E7D32}
+\titleformat{\section}{\large\bfseries\color{accent}}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\normalsize\bfseries\color{accent}}{\thesubsection}{0.6em}{}
+\setlength{\parindent}{0pt}\setlength{\parskip}{0.55em}
+\renewcommand{\arraystretch}{1.25}
+\pagestyle{fancy}\fancyhf{}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\lstset{basicstyle=\ttfamily\small,backgroundcolor=\color{soft},frame=none,breaklines=true,columns=fullflexible,keepspaces=true,xleftmargin=0.5em,aboveskip=0.6em,belowskip=0.4em}
+\newcommand{\code}[1]{\texttt{\small\detokenize{#1}}}
+\usepackage[most]{tcolorbox}
+\newtcolorbox{callout}[1]{colback=soft,colframe=accent,boxrule=0.5pt,arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt,title={#1},fonttitle=\bfseries}
+\usepackage{colortbl}
+\newcommand{\titleblock}[2]{\begin{center}{\LARGE\bfseries\color{accent}#1}\\[0.4em]{\large #2}\\[0.3em]{\small Kevin Williams \quad|\quad October 25, 2026}\end{center}\vspace{0.3em}}
+\fancyhead[L]{\small Model: Claude Sonnet 5.5}
+\renewcommand{\headrulewidth}{0.4pt}
+\begin{document}
+\titleblock{Project 1 Prompts}{Model: Claude Sonnet 5.5}
+
+The prompts below are the most important ones for creating the scripts, quoted exactly as written. Each is followed by the files it produced.
+
+\newcommand{\prompt}[3]{\begin{callout}{Prompt #1: #2}\textit{#3}\end{callout}}
+\newcommand{\made}[1]{\par\vspace{-0.4em}\noindent\textbf{Produced:} #1\par\vspace{0.6em}}
+
+\prompt{1}{Project concept}{i need to plan a matlab project for my numerical and symbolic computation class, my idea is to make a volatility surface interactive for company stock tickers, if I could connect this to my already working python/ocaml black scholes option chain that would be perfect for my resume as well. Help me decide how to create this}
+\made{the project plan (no script yet)}
+
+\prompt{2}{Connecting the existing engine}{I can call Python from MATLAB, Im not sure whether or not a structured return is in my project, I would like to focus on single stocks for now since thats what the options chain supports right now. Ive attached the options chain code (python and ocaml) for you to look at to determine the steps needed to go from what I have to the structured data to be put into MATLAB for the volatility surface. I will need a project proposal written, a single paragraph briefly explaining the project, what its for, and how its put together}
+\made{the data path from the Python/OCaml engine to MATLAB, which defined the pipeline}
+
+\prompt{3}{The data exporter}{what is SVI and no-arbitrage checks? We have another personal project to do later on in the semester so maybe we cut down the scope of it so that we can improve upon it later. Please write surface\_export.py}
+\made{\texttt{surface\_export.py}}
+
+\prompt{4}{MATLAB core, tested on any CSV}{I dont want it run against that exact csv, I would rather something I could test against any input csv}
+\made{\texttt{load\_chain.m}, \texttt{bs\_symbolic.m}, \texttt{implied\_vol.m}, \texttt{forward\_from\_parity.m}, \texttt{select\_otm.m}, \texttt{run\_vol\_checks.m}, \texttt{test\_vol\_pipeline.m}. The follow-up reply ``yeah'' approved the surface code: \texttt{build\_surface.m}, \texttt{smile\_slice.m}, \texttt{term\_structure\_slice.m}, \texttt{plot\_surface.m}, \texttt{test\_surface.m}}
+
+\prompt{5}{One-call entry point}{create a matlab script which can be called with one ticker and run the loop to get the volatility surface up}
+\made{\texttt{vol\_surface.m}}
+
+\prompt{6}{Prior-session option}{add an argument setting for vol\_surface which allows me to scrape for yesterdays options in the case that im trying to use the tool too early in the day}
+\made{the \texttt{Session} and \texttt{PriorWindowMin} options in \texttt{vol\_surface.m} and the matching prior-session mode in \texttt{surface\_export.py}}
+
+\prompt{7}{Explainer window}{can we add a second part of the visual, maybe on another page or something to help explain what the volatility surface is trying to show? id like it to be in such a way that someone from my class can understand after reading it with no prior knowledge on options}
+\made{\texttt{explain\_surface.m} and the \texttt{Explain} option in \texttt{vol\_surface.m}}
+
+\prompt{8}{Verification procedure (excerpt)}{\ldots Also come up with a sample verification process to show that it works as intended}
+\made{\texttt{verify\_demo.m} and \texttt{verify\_independent.py}}
+
+\prompt{9}{Historical visual verification}{create a script which runs a visual verification of the volatility surface against a single interesting and complex surface which has historical value perhaps the crash of the market at some point or the housing market short, or in times of war. whichever gives the most memorable and interesting meaning behind the surface such that I can explain it easily to my classmates}
+\made{\texttt{verify\_covid\_crash.m}}
+\end{document}
