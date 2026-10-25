@@ -226,6 +226,7 @@ A second window, **How to read the surface**, opens alongside it (`explain_surfa
 - `docs/vol_surface_user_guide.pdf`: how to install, run and troubleshoot `vol_surface`.
 - `docs/scientific_computing_principles.pdf`: the numerical and symbolic ideas behind the project, in plain language.
 - `docs/verification_process.pdf`: a sample procedure showing the tool works. Run `verify_demo` in MATLAB (add a snapshot path to include real data) and `python3 matlab/verify_independent.py <snapshot.csv>` for an independent check.
+- `matlab/verify_covid_crash.m`: a visual verification on a stylized reconstruction of the March 2020 volatility panic (calm Feb 2020 vs the VIX record close of 82.69 on 16 Mar 2020). It plants a known surface, runs it through the same pipeline as live tickers, and shows the tool recovers it. Free historical chains are not available, so the surface is illustrative, not market data.
 
 ### Limitations and next steps
 

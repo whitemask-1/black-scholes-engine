@@ -1,0 +1,30 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{mathptmx}\usepackage[scaled=.92]{helvet}\usepackage{courier}\usepackage{microtype}\renewcommand{\familydefault}{\sfdefault}
+\usepackage{booktabs,tabularx,array,xcolor,graphicx,enumitem,fancyhdr,titlesec,listings,amsmath}
+\usepackage[hidelinks]{hyperref}
+\definecolor{accent}{HTML}{1F4E79}
+\definecolor{soft}{HTML}{EEF3F8}
+\definecolor{good}{HTML}{2E7D32}
+\titleformat{\section}{\large\bfseries\color{accent}}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\normalsize\bfseries\color{accent}}{\thesubsection}{0.6em}{}
+\setlength{\parindent}{0pt}\setlength{\parskip}{0.55em}
+\renewcommand{\arraystretch}{1.25}
+\pagestyle{fancy}\fancyhf{}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\lstset{basicstyle=\ttfamily\small,backgroundcolor=\color{soft},frame=none,breaklines=true,columns=fullflexible,keepspaces=true,xleftmargin=0.5em,aboveskip=0.6em,belowskip=0.4em}
+\newcommand{\code}[1]{\texttt{\small\detokenize{#1}}}
+\usepackage[most]{tcolorbox}
+\newtcolorbox{callout}[1]{colback=soft,colframe=accent,boxrule=0.5pt,arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt,title={#1},fonttitle=\bfseries}
+\usepackage{colortbl}
+\newcommand{\titleblock}[2]{\begin{center}{\LARGE\bfseries\color{accent}#1}\\[0.4em]{\large #2}\\[0.3em]{\small Kevin Williams \quad|\quad October 25, 2026}\end{center}\vspace{0.3em}}
+\begin{document}
+\titleblock{Verification Summary}{How the volatility surface tool was checked}
+
+I checked the tool at four levels, each against an answer known in advance or computed by an unrelated program. First, the pricing formula passes the Black-Scholes equation and put-call parity checks in MATLAB's symbolic engine. Second, the solver turns known volatilities into prices and back again: 142 round trips came back with a worst error of $3\times10^{-7}$, and impossible prices are rejected instead of ``solved''. Third, the interpolated surface matches a surface with a known formula at points it was never given, and it leaves blank areas blank instead of filling in zeros. Finally, on a real AAPL chain (140 options, 8 expiries) MATLAB, the OCaml engine and an independent Python solver all agree to within $5\times10^{-7}$, which is OCaml's own six-decimal rounding.
+
+\vfill
+{\small See \emph{Verification Report} and \emph{Verification Process} in this folder for the full evidence and procedure.}
+\end{document}
