@@ -1,0 +1,127 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{mathptmx}\usepackage[scaled=.92]{helvet}\usepackage{courier}\usepackage{microtype}\renewcommand{\familydefault}{\sfdefault}
+\usepackage{booktabs,tabularx,array,xcolor,graphicx,enumitem,fancyhdr,titlesec,listings,amsmath}
+\usepackage[hidelinks]{hyperref}
+\definecolor{accent}{HTML}{1F4E79}
+\definecolor{soft}{HTML}{EEF3F8}
+\definecolor{good}{HTML}{2E7D32}
+\titleformat{\section}{\large\bfseries\color{accent}}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\normalsize\bfseries\color{accent}}{\thesubsection}{0.6em}{}
+\setlength{\parindent}{0pt}\setlength{\parskip}{0.55em}
+\renewcommand{\arraystretch}{1.25}
+\pagestyle{fancy}\fancyhf{}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\lstset{basicstyle=\ttfamily\small,backgroundcolor=\color{soft},frame=none,breaklines=true,columns=fullflexible,keepspaces=true,xleftmargin=0.5em,aboveskip=0.6em,belowskip=0.4em}
+\newcommand{\code}[1]{\texttt{\small\detokenize{#1}}}
+\usepackage[most]{tcolorbox}
+\newtcolorbox{callout}[1]{colback=soft,colframe=accent,boxrule=0.5pt,arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt,title={#1},fonttitle=\bfseries}
+\usepackage{colortbl}
+\newcommand{\titleblock}[2]{\begin{center}{\LARGE\bfseries\color{accent}#1}\\[0.4em]{\large #2}\\[0.3em]{\small Kevin Williams \quad|\quad October 23, 2026}\end{center}\vspace{0.3em}}
+\begin{document}
+\titleblock{Verification Process}{A sample procedure showing the volatility surface tool works as intended}
+
+\section{Approach: compare against answers known in advance}
+A plot that looks plausible is not proof. This procedure checks the tool against answers that are known \emph{before} it runs, using four kinds of evidence of rising strength: known formulas, round trips, a planted truth, and independent programs that share no code with MATLAB. It takes about two minutes and needs no market data for the first six checks.
+
+\begin{callout}{Run it}
+In MATLAB: \code{verify_demo} \quad offline checks only\\[0.3em]
+In MATLAB: \code{verify_demo("snapshots/<file>.csv")} \quad adds the real-data check\\[0.3em]
+In a terminal: \code{python3 verify_independent.py snapshots/<file>.csv} \quad independent check
+\end{callout}
+
+\section{The checks}
+\begin{tabularx}{\linewidth}{@{}c>{\raggedright\arraybackslash}p{0.27\linewidth}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{0.2\linewidth}@{}}
+\toprule
+\textbf{\#} & \textbf{Check} & \textbf{Why it proves something} & \textbf{Pass if}\\\midrule
+1 & Textbook prices & A worked example (stock 100, strike 100, 1 year, 5\% rate, 20\% volatility) has one correct call price, put price and vega & miss $<10^{-5}$\\
+2 & Symbolic identities & The pricing formula must satisfy the Black-Scholes equation and put-call parity; MATLAB tests both & residual $<10^{-8}$\\
+3 & Round trip & Price $\to$ volatility must return the volatility put in & error $<10^{-6}$\\
+4 & Impossible prices & A call worth less than intrinsic value or more than the stock must be rejected, not ``solved'' & NaN returned\\
+5 & Planted smile & Build a fake chain from a smile we choose, run the real pipeline, and confirm it recovers that smile at every quoted strike & error $<10^{-5}$\\
+6 & Unseen points & Query the surface at strikes and maturities that were \emph{not} quoted and compare with the planted truth & error $<5\times10^{-3}$\\
+7 & Real snapshot & On live data, MATLAB's volatilities must match the independent OCaml engine & max diff $<10^{-6}$\\\bottomrule
+\end{tabularx}
+
+Checks 5 and 6 are the strongest offline evidence. The planted smile is $\sigma(x)=0.25+0.6\,x^2-0.15\,x$ with $x=\ln(K/S)$, a curved, tilted shape like a real equity smile, quoted at three expiries (30, 60 and 120 days). Because the answer is known exactly, any error is the tool's own.
+
+\section{Reference values, computed independently}
+The expected numbers below were calculated outside MATLAB, with SciPy, so they do not share any code with the tool.
+
+\begin{center}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\textbf{Textbook case (S=K=100, T=1, r=5\%, $\sigma$=20\%)} & \textbf{Expected} & \textbf{Dividend yield 2\%}\\\midrule
+Call price & 10.450584 & 9.227006\\
+Put price & 5.573526 & 6.330081\\
+Vega & 37.524035 & 37.901158\\
+Put-call parity residual & 0 & 0\\\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Evidence gathered so far}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.34\linewidth}X>{\raggedright\arraybackslash}p{0.2\linewidth}@{}}
+\toprule
+\textbf{Evidence} & \textbf{Result} & \textbf{Where produced}\\\midrule
+Independent Python solver (Brent root finder) vs OCaml on the AAPL snapshot of 12 Oct 2026 & 140 out-of-the-money contracts across 8 expiries, all solved; median difference $2.55\times10^{-7}$, maximum $4.99\times10^{-7}$ & Python, measured while writing this document\\
+MATLAB pipeline vs OCaml on the same snapshot & Same 140 contracts; median $2.6\times10^{-7}$, maximum $5.0\times10^{-7}$; no bisection fallback needed & MATLAB, earlier session\\
+Round-trip test grid (\texttt{test\_vol\_pipeline}) & 142 cases tested, 18 skipped where price carries no information about volatility; worst error $3.1\times10^{-7}$ & MATLAB, earlier session\\
+Planted-smile surface, unseen points (check 6) & Largest miss about $1.1\times10^{-3}$ (0.1 volatility points), mean $1.5\times10^{-4}$ across 2000 random points & Python replica of the interpolation, not MATLAB\\\bottomrule
+\end{tabularx}
+
+\textbf{Reading the agreement.} The OCaml engine prints volatilities to six decimals, so the largest possible rounding difference is $5\times10^{-7}$. Both independent programs land exactly at that ceiling, which means the remaining difference is the printing, not the mathematics. Three unrelated implementations (OCaml, MATLAB, SciPy) agree on 140 real contracts.
+
+\section{Procedure, step by step}
+\begin{enumerate}[leftmargin=1.5em]
+\item Open MATLAB in the repository's \texttt{matlab} folder.
+\item Run \texttt{test\_vol\_pipeline} and \texttt{test\_surface}. Each prints \texttt{[ok]} lines and ends with ``All \ldots checks passed.''
+\item Run \texttt{verify\_demo}. A report like the one below appears, followed by a figure comparing the planted smile with the recovered one at a 90-day maturity that was never quoted.
+\item Run \texttt{verify\_demo("snapshots/<file>.csv")} on a saved snapshot to add check 7.
+\item Run \texttt{verify\_independent.py} on the same snapshot and confirm the Python numbers sit near the MATLAB ones.
+\item Record the outcome in the sign-off sheet below.
+\end{enumerate}
+
+\textbf{Shape of the report} (layout shown; numbers will be your own):
+\begin{lstlisting}
+=========== VERIFICATION REPORT ===========
+[PASS] Textbook call, put and vega     call 10.450584, put 5.573526, ...
+[PASS] Black-Scholes PDE holds         largest residual ...
+[PASS] Put-call parity holds           largest residual ...
+[PASS] Price to volatility round trip  ... worst error ...
+[PASS] Impossible prices return NaN    both rejected
+[PASS] Planted smile recovered at ...  ... worst error ...
+[PASS] Surface accurate at points ...  400 points, worst error ...
+-------------------------------------------
+ALL 7 CHECKS PASSED
+\end{lstlisting}
+
+\section{If a check fails}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.27\linewidth}X@{}}
+\toprule
+\textbf{Failing check} & \textbf{Most likely cause}\\\midrule
+1 or 2 & The pricing formula or its symbolic derivation changed (a sign or discount-factor error)\\
+3 & The solver's bracket or tolerance changed, or the vega used for the Newton step is wrong\\
+4 & The no-arbitrage guard was removed, so impossible prices produce numbers\\
+5 & The forward-price estimate or the out-of-the-money selection is wrong, shifting strikes\\
+6 & The interpolation changed: scaling of axes, or interpolating the wrong quantity\\
+7 & Bad data in the snapshot, or the dividend-yield or interest-rate column differs between engines\\\bottomrule
+\end{tabularx}
+
+\section{Sign-off sheet}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.2\linewidth}XXXX@{}}
+\toprule
+\textbf{Date / ticker} & \textbf{test\_vol\_pipeline} & \textbf{test\_surface} & \textbf{verify\_demo} & \textbf{Python check}\\\midrule
+\rule{0pt}{2.2em} & & & & \\
+\rule{0pt}{2.2em} & & & & \\
+\rule{0pt}{2.2em} & & & & \\\bottomrule
+\end{tabularx}
+
+\section{What this does not prove}
+\begin{itemize}[leftmargin=1.5em]
+\item That Yahoo's quotes are correct or current. The procedure verifies the \emph{computation}, not the data.
+\item That the surface is free of arbitrage. The interpolated surface is a faithful picture of the quotes; a no-arbitrage fit is a planned later project.
+\item That Black-Scholes is the right model. Its disagreement with the market is precisely what the surface displays.
+\end{itemize}
+\end{document}

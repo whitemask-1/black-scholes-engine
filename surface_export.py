@@ -26,7 +26,9 @@ Notes:
 import argparse
 import json
 import subprocess
-from datetime import datetime, timezone
+import sys
+from datetime import datetime, time as dtime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import numpy as np
@@ -44,6 +46,31 @@ COLUMNS = [
 ]
 
 IV_MIN, IV_MAX = 0.01, 5.0  # reject solver output outside this range
+
+ET = ZoneInfo("America/New_York")
+SESSION_OPEN, SESSION_CLOSE = dtime(9, 30), dtime(16, 0)
+
+
+def market_is_open(now_et):
+    """True during regular US trading hours (holidays are not modelled)."""
+    return now_et.weekday() < 5 and SESSION_OPEN <= now_et.time() < SESSION_CLOSE
+
+
+def last_completed_session(ticker, now_et):
+    """(date, close) of the most recent finished regular session."""
+    hist = ticker.history(period="10d", interval="1d")
+    closes = hist["Close"].dropna() if hist is not None and len(hist) else []
+    if len(closes) == 0:
+        raise RuntimeError("No recent daily price history available to find the prior session.")
+    finished = [
+        i for i, ts in enumerate(closes.index)
+        if ts.date() < now_et.date()
+        or (ts.date() == now_et.date() and now_et.time() >= dtime(16, 15))
+    ]
+    if not finished:
+        raise RuntimeError("Could not identify a completed trading session in the price history.")
+    i = finished[-1]
+    return closes.index[i].date(), float(closes.iloc[i])
 
 
 def _rate_bucket(T):
@@ -81,6 +108,50 @@ def clean_quotes(df, S, T, r, option_type, max_spread_pct=0.5, min_open_interest
     return df[keep]
 
 
+def clean_last_trades(df, S, T, r, option_type, session_date, window_start, min_open_interest=1, stats=None):
+    """Prior-session mode: keep contracts whose LAST TRADE was in the final window of
+    `session_date` and use that last price as the mid.
+
+    Bid/ask are meaningless before the open, so there is no spread filter. Requiring the
+    trade to fall in the closing window keeps the option price roughly synchronous with
+    the closing spot price used as S (older trades are priced against a different spot).
+
+    stats: optional dict; "active" counts contracts that traded on/after session_date and
+    "after" those whose last trade is newer than the session's close, i.e. whose last
+    price has since been overwritten by today's trading.
+    """
+    df = df.copy()
+    for col in ("lastPrice", "openInterest", "volume", "impliedVolatility", "bid", "ask", "lastTradeDate"):
+        if col not in df.columns:
+            df[col] = np.nan
+
+    traded = pd.to_datetime(df["lastTradeDate"], utc=True, errors="coerce").dt.tz_convert(ET)
+    df["mid"] = df["lastPrice"]
+    df["spread_pct"] = np.nan
+
+    if stats is not None:
+        session_close = datetime.combine(session_date, SESSION_CLOSE, tzinfo=ET)
+        day_start = datetime.combine(session_date, dtime(0, 0), tzinfo=ET)
+        priced = df["lastPrice"] > 0
+        stats["active"] += int((priced & (traded >= day_start)).sum())
+        stats["after"] += int((priced & (traded > session_close + timedelta(minutes=15))).sum())
+
+    disc_k = df["strike"] * np.exp(-r * T)
+    if option_type == "call":
+        intrinsic = np.maximum(S - disc_k, 0.0)
+    else:
+        intrinsic = np.maximum(disc_k - S, 0.0)
+
+    keep = (
+        (df["lastPrice"] > 0)
+        & (traded.dt.date == session_date)
+        & (traded >= window_start)
+        & (df["openInterest"].fillna(0) >= min_open_interest)
+        & (df["mid"] > intrinsic)
+    )
+    return df[keep]
+
+
 def ocaml_iv(S, K, T, r, price, option_type):
     """Reference IV from the OCaml engine; NaN if the solver fails or is out of range."""
     try:
@@ -101,32 +172,58 @@ def build_snapshot(
     min_open_interest=1,
     min_rows=20,
     min_expiries=2,
+    session="live",
+    prior_window_min=60,
+    max_overwritten=0.2,
     iv_fn=ocaml_iv,
     ticker=None,
+    now=None,
 ):
     """Build the snapshot DataFrame and meta dict for one ticker.
 
     iv_fn: callable(S, K, T, r, price, option_type) -> float, or None to skip
     the OCaml reference column (iv_ocaml will be NaN).
     ticker: optional yfinance-like object (injectable for tests).
+
+    session: "live" (default) prices from the current bid/ask midpoint. "prior" is for
+    use BEFORE the market opens: Yahoo only serves the current chain, so the prior
+    session is rebuilt from each contract's last trade (kept only if it traded in the
+    final `prior_window_min` minutes of that session) against that session's close.
+    While the market is open it still works as long as few contracts have traded today:
+    the share whose last price is already today's is measured, and the snapshot is refused
+    if it exceeds `max_overwritten` (liquid ATM contracts trade first, so a high share
+    means the sample is biased toward illiquid strikes). now: injectable clock for tests.
     """
+    if session not in ("live", "prior"):
+        raise ValueError('session must be "live" or "prior"')
     symbol = symbol.upper()
     ticker = ticker or yf.Ticker(symbol)
 
-    S = float(ticker.fast_info["last_price"])  # one spot for the whole surface
-    asof = datetime.now(timezone.utc).replace(microsecond=0)
+    asof_date = None
+    if session == "prior":
+        now_et = (now or datetime.now(ET)).astimezone(ET)
+        asof_date, S = last_completed_session(ticker, now_et)
+        asof = datetime.combine(asof_date, SESSION_CLOSE, tzinfo=ET)
+        window_start = asof - timedelta(minutes=prior_window_min)
+    else:
+        S = float(ticker.fast_info["last_price"])  # one spot for the whole surface
+        asof = datetime.now(timezone.utc).replace(microsecond=0)
 
     expirations = ticker.options
     if not expirations:
         raise ValueError(f"No options available for {symbol}")
 
     rate_cache = {}
+    stats = {"active": 0, "after": 0}
     frames, used_expiries, rates = [], [], {}
 
     for exp in expirations:
         if len(used_expiries) >= max_expiries:
             break
-        T = time_till_exp(exp)
+        if session == "prior":   # measure maturity from the prior session, not from today
+            T = (datetime.strptime(exp, "%Y-%m-%d").date() - asof_date).days / 365.25
+        else:
+            T = time_till_exp(exp)
         if T * 365.25 < min_days:
             continue  # too close to expiry: vega ~ 0, T=0 divides by zero
 
@@ -138,7 +235,11 @@ def build_snapshot(
         chain = ticker.option_chain(exp)
         kept = 0
         for option_type, raw in (("call", chain.calls), ("put", chain.puts)):
-            q = clean_quotes(raw, S, T, r, option_type, max_spread_pct, min_open_interest)
+            if session == "prior":
+                q = clean_last_trades(raw, S, T, r, option_type, asof_date, window_start,
+                                      min_open_interest, stats)
+            else:
+                q = clean_quotes(raw, S, T, r, option_type, max_spread_pct, min_open_interest)
             if q.empty:
                 continue
             q = q.assign(type=option_type, expiry=exp, T=T, r=r)
@@ -156,20 +257,34 @@ def build_snapshot(
             used_expiries.append(exp)
             rates[exp] = r
 
+    overwritten = stats["after"] / stats["active"] if stats["active"] else 0.0
+    if session == "prior":
+        if overwritten > max_overwritten:
+            raise RuntimeError(
+                f"{overwritten:.0%} of {symbol} contracts have already traded since the prior session "
+                f"closed, so their last prices are no longer yesterday's (limit {max_overwritten:.0%}). "
+                "A prior-session surface would be biased toward illiquid strikes. "
+                "Use session=\"live\" now, or run prior mode before the open. Nothing was written."
+            )
+        if overwritten > 0:
+            print(f"note: {overwritten:.0%} of contracts have already traded today and were excluded.",
+                  file=sys.stderr)
+    if session == "prior":
+        why = (f"In prior mode only contracts whose last trade fell in the final {prior_window_min} "
+               "minutes of the session are kept; widen it with --prior-window-min.")
+    else:
+        why = ("The market is probably closed or just opening: bids/asks are mostly zero outside "
+               "regular hours (9:30-16:00 ET), and the first minutes after the open are thin. "
+               "Before the open, try session=\"prior\" (--session prior).")
     if not frames:
-        raise RuntimeError(
-            f"No quotes survived filtering for {symbol}. If the market is closed, "
-            "bids/asks are often zero - rerun during trading hours."
-        )
+        raise RuntimeError(f"No quotes survived filtering for {symbol}. {why}")
 
     df = pd.concat(frames, ignore_index=True)
     if len(df) < min_rows or len(used_expiries) < min_expiries:
         raise RuntimeError(
             f"Only {len(df)} usable quote(s) across {len(used_expiries)} expiry(ies) for {symbol} "
             f"(need >= {min_rows} quotes and >= {min_expiries} expiries for a surface). "
-            "The market is probably closed or just opening: bids/asks are mostly zero outside "
-            "regular hours (9:30-16:00 ET), and the first minutes after the open are thin. "
-            "Nothing was written; rerun later or use an existing snapshot."
+            f"{why} Nothing was written."
         )
     df["symbol"] = symbol
     df["asof"] = asof.isoformat()
@@ -191,13 +306,21 @@ def build_snapshot(
             "min_open_interest": min_open_interest,
             "max_expiries": max_expiries,
         },
-        "notes": "q=0 (no dividend term in engine); T = days/365.25; mid=(bid+ask)/2",
+        "session": session,
+        "overwritten_fraction": round(overwritten, 4) if session == "prior" else None,
+        "price_source": (
+            "bid/ask midpoint"
+            if session == "live"
+            else f"last trade, final {prior_window_min} min of {asof_date} (spot = that day's close)"
+        ),
+        "notes": "q=0 (no dividend term in engine); T = days/365.25 from the as-of date",
     }
     return df, meta
 
 
 def export_snapshot(symbol, out_dir="snapshots", use_ocaml=True, **kwargs):
-    """Write <SYMBOL>_<timestamp>.csv, <SYMBOL>_latest.csv and a meta JSON.
+    """Write <SYMBOL>_<timestamp>.csv, <SYMBOL>_latest.csv and a meta JSON
+    (prior session: <SYMBOL>_<timestamp>_prior.csv and <SYMBOL>_prior_latest.csv).
 
     Returns the path of the timestamped CSV as a string (handy from MATLAB).
     """
@@ -214,10 +337,12 @@ def export_snapshot(symbol, out_dir="snapshots", use_ocaml=True, **kwargs):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     stamp = datetime.fromisoformat(meta["asof"]).strftime("%Y%m%d_%H%M")
-    csv_path = out / f"{meta['symbol']}_{stamp}.csv"
+    # prior-session snapshots use their own names so they never overwrite a live *_latest.csv
+    tag = "_prior" if meta["session"] == "prior" else ""
+    csv_path = out / f"{meta['symbol']}_{stamp}{tag}.csv"
 
     df.to_csv(csv_path, index=False)
-    df.to_csv(out / f"{meta['symbol']}_latest.csv", index=False)
+    df.to_csv(out / f"{meta['symbol']}{tag}_latest.csv", index=False)
     csv_path.with_suffix(".json").write_text(json.dumps(meta, indent=2))
     return str(csv_path)
 
@@ -231,6 +356,12 @@ def main():
     p.add_argument("--max-spread-pct", type=float, default=0.5)
     p.add_argument("--min-open-interest", type=int, default=1)
     p.add_argument("--min-rows", type=int, default=20, help="refuse to write a snapshot with fewer usable quotes")
+    p.add_argument("--session", choices=["live", "prior"], default="live",
+                   help="prior = rebuild yesterday from last trades (use before the market opens)")
+    p.add_argument("--prior-window-min", type=int, default=60,
+                   help="prior mode: keep only trades in the final N minutes of the session")
+    p.add_argument("--max-overwritten", type=float, default=0.2,
+                   help="prior mode: refuse if more than this share of contracts already traded today")
     p.add_argument("--no-ocaml", action="store_true", help="skip the OCaml reference IV column")
     a = p.parse_args()
 
@@ -243,6 +374,9 @@ def main():
         max_spread_pct=a.max_spread_pct,
         min_open_interest=a.min_open_interest,
         min_rows=a.min_rows,
+        session=a.session,
+        prior_window_min=a.prior_window_min,
+        max_overwritten=a.max_overwritten,
     )
     print(path)
 

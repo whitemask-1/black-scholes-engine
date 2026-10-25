@@ -155,6 +155,8 @@ Black-Scholes assumes one constant volatility. Inverting real market prices says
 cd matlab
 vol_surface("AAPL")                                   % live snapshot -> figure
 vol_surface("AAPL", "Refresh", false)                 % reuse snapshots/AAPL_latest.csv (no network)
+vol_surface("AAPL", "Session", "prior")                 % before the open: rebuild yesterday from last trades
+vol_surface("AAPL", "Session", "auto")                  % live if possible, otherwise yesterday
 out = vol_surface("MSFT", "MaxExpiries", 6, "Expiry", "2026-11-20");   % optional options + returned data
 ```
 
@@ -165,6 +167,8 @@ out = vol_surface("MSFT", "MaxExpiries", 6, "Expiry", "2026-11-20");   % optiona
 - The OCaml binary built (`dune build` in `bsm_engine/`) for the cross-check, or pass `"UseOCaml", false` to skip it
 
 **Market hours matter.** Outside regular hours (9:30-16:00 ET), and in the first minutes after the open, most bids and asks are zero. `surface_export.py` refuses to write a snapshot with fewer than 20 usable quotes or fewer than 2 expiries (`--min-rows` changes the first limit), and `vol_surface` falls back to the cached `*_latest.csv` with a warning. `snapshots/` is git-ignored, so the very first run needs a live fetch.
+
+**Before the open: `"Session", "prior"`.** Yahoo only serves the *current* chain, so yesterday's chain can't be downloaded. Instead, prior mode rebuilds it from each contract's last trade, keeping only trades from the final hour of the previous session (`"PriorWindowMin"`, default 60) and pricing them against that session's closing price. It also works shortly after the open: the share of contracts that have already traded today (whose last price is no longer yesterday's) is measured, and the snapshot is refused if it exceeds 20% (`--max-overwritten`), because liquid at-the-money contracts trade first and the sample would skew toward illiquid strikes. The result is noisier than a live snapshot because the last trades are not simultaneous. Prior-session snapshots are saved as `<TICKER>_<date>_prior.csv` and `<TICKER>_prior_latest.csv`, so they never overwrite a live `*_latest.csv`; the figure title is tagged accordingly. `"Session", "auto"` tries live first and falls back to the prior session.
 
 ### How it works
 
@@ -214,6 +218,14 @@ test_surface         % interpolation accuracy, no extrapolation, slices, duplica
 - **Top right:** the smile for one expiry (by default the one with the most quotes). Implied volatility is highest for low strikes and falls as the strike rises, the usual skew for equity options, which constant-volatility Black-Scholes cannot produce.
 - **Bottom right:** implied volatility at the forward (`k = 0`) across maturities.
 - **Known artifact:** the sharp dip at the short end of this particular snapshot comes from one thinly quoted expiry (9 days, only 4 out-of-the-money quotes with spreads of 25-37%). It reflects poor quotes, not a market signal.
+
+A second window, **How to read the surface**, opens alongside it (`explain_surface.m`; disable with `"Explain", false`). It explains, with no options background assumed, what an option is, what volatility and implied volatility mean, and what the smile and term structure show, using the ticker's own data in every panel.
+
+### Documentation and verification
+
+- `docs/vol_surface_user_guide.pdf`: how to install, run and troubleshoot `vol_surface`.
+- `docs/scientific_computing_principles.pdf`: the numerical and symbolic ideas behind the project, in plain language.
+- `docs/verification_process.pdf`: a sample procedure showing the tool works. Run `verify_demo` in MATLAB (add a snapshot path to include real data) and `python3 matlab/verify_independent.py <snapshot.csv>` for an independent check.
 
 ### Limitations and next steps
 

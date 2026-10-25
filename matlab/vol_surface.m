@@ -3,6 +3,8 @@ function out = vol_surface(ticker, opts)
 %   vol_surface("AAPL")
 %   out = vol_surface("MSFT", "MaxExpiries", 6, "Expiry", "2026-11-20")
 %   vol_surface("AAPL", "Refresh", false)       % reuse snapshots/AAPL_latest.csv
+%   vol_surface("AAPL", "Session", "prior")     % before the open: yesterday's close
+%   vol_surface("AAPL", "Session", "auto")      % live if possible, else yesterday
 %
 %   Pipeline:
 %     1. runs surface_export.py (live Yahoo Finance chain -> snapshots/*.csv)
@@ -23,8 +25,25 @@ function out = vol_surface(ticker, opts)
 %     MinDays      7      skip expiries closer than this many days.
 %     Expiry       ""     expiry shown in the smile panel, e.g. "2026-11-20".
 %                         Default: the expiry with the most quotes.
+%     Session      "live" "live" = current bid/ask prices (market hours).
+%                         "prior" = rebuild the PREVIOUS session before the open.
+%                         Yahoo only serves the current chain, so this uses each
+%                         contract's last trade (kept only if it traded in the final
+%                         PriorWindowMin minutes of that session) against that
+%                         session's closing price. Works shortly after the open too, but
+%                         is refused once >20% of contracts have already traded today.
+%                         "auto" = try live; if that fails, use the prior session.
+%     PriorWindowMin 60   prior mode: keep only trades in the last N minutes of the
+%                         session. Smaller = better price/spot synchronisation, fewer
+%                         contracts. Prior-session surfaces are noisier than live ones.
 %
-%   Returns (optional) a struct: csv, chain, res, surface, smile, term, figure.
+%     Explain      true   also open a second figure, "How to read the surface": a
+%                         plain-English guide (what an option, volatility, implied
+%                         volatility, the smile and the term structure are) drawn
+%                         from this ticker's own data. See explain_surface.m.
+%
+%   Returns (optional) a struct: ticker, csv, chain, res, surface, smile, term, figure,
+%   explainFigure.
 
     arguments
         ticker (1,1) string
@@ -34,6 +53,9 @@ function out = vol_surface(ticker, opts)
         opts.MaxExpiries (1,1) double {mustBeInteger, mustBePositive} = 8
         opts.MinDays (1,1) double {mustBeNonnegative} = 7
         opts.Expiry (1,1) string = ""
+        opts.Session (1,1) string = "live"
+        opts.PriorWindowMin (1,1) double {mustBeInteger, mustBePositive} = 60
+        opts.Explain (1,1) logical = true
     end
 
     here = fileparts(mfilename('fullpath'));     % .../black-scholes/matlab
@@ -48,25 +70,54 @@ function out = vol_surface(ticker, opts)
     end
 
     % ---- 1. get a snapshot -------------------------------------------------
-    cached = string(fullfile(root, 'snapshots', ticker + "_latest.csv"));
+    session = lower(opts.Session);
+    if ~ismember(session, ["live" "prior" "auto"])
+        error('vol_surface:badSession', ...
+            'Session must be "live", "prior" or "auto" (got "%s").', opts.Session);
+    end
+    % prior-session snapshots have their own cache so they never replace a live one
+    if session == "prior"
+        cached = string(fullfile(root, 'snapshots', ticker + "_prior_latest.csv"));
+    else
+        cached = string(fullfile(root, 'snapshots', ticker + "_latest.csv"));
+    end
+
     csv = "";
     if opts.Refresh
-        try
-            py  = findPython(opts.Python, root);
-            csv = runExporter(py, root, ticker, opts);
-        catch err
+        switch session
+            case "live",  attempts = "live";
+            case "prior", attempts = "prior";
+            otherwise,    attempts = ["live" "prior"];       % auto
+        end
+        py = "";  lastErr = [];
+        for a = attempts
+            try
+                if py == "", py = findPython(opts.Python, root); end
+                csv = runExporter(py, root, ticker, opts, a);
+                lastErr = [];
+                break
+            catch err
+                lastErr = err;
+                if numel(attempts) > 1 && a == attempts(1)
+                    fprintf('Live snapshot unavailable (%s)\n  -> trying the prior session instead...\n', ...
+                        firstLine(err.message));
+                end
+            end
+        end
+        if csv == "" && ~isempty(lastErr)
             if isfile(cached)
                 warning('vol_surface:usingCache', ...
-                    'Live export failed:\n%s\n--> using cached snapshot %s', err.message, cached);
+                    'Export failed:\n%s\n--> using cached snapshot %s', lastErr.message, cached);
             else
-                rethrow(err);
+                rethrow(lastErr);
             end
         end
     end
     if csv == ""
         if ~isfile(cached)
             error('vol_surface:noSnapshot', ...
-                'No cached snapshot at %s. Run once with "Refresh", true during market hours.', cached);
+                ['No cached snapshot at %s. Run once with "Refresh", true during market hours ' ...
+                 '(or "Session", "prior" before the open).'], cached);
         end
         csv = cached;
     end
@@ -80,8 +131,8 @@ function out = vol_surface(ticker, opts)
         error('vol_surface:thinSnapshot', ...
             ['Snapshot %s has only %d usable out-of-the-money quote(s) across %d expiry(ies); ' ...
              'a surface needs several expiries. Outside market hours (9:30-16:00 ET) most ' ...
-             'bids/asks are zero. Rerun when the market is open, or pass "Refresh", false ' ...
-             'to use an older snapshot.'], csv, height(res), nEx);
+             'bids/asks are zero. Rerun when the market is open, use "Session", "prior" before ' ...
+             'the open, or pass "Refresh", false to use an older snapshot.'], csv, height(res), nEx);
     end
     s     = build_surface(res);
 
@@ -102,7 +153,10 @@ function out = vol_surface(ticker, opts)
     fig = figure('Name', "Volatility surface - " + ticker, 'Color', 'w', ...
         'Position', [80 80 1300 650]);
     tl = tiledlayout(fig, 2, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
-    title(tl, sprintf('%s   spot %.2f   snapshot %s', ticker, spot, asof));
+    [~, csvName] = fileparts(csv);
+    label = "";
+    if contains(csvName, "_prior"), label = "   [prior session: last trades]"; end
+    title(tl, sprintf('%s   spot %.2f   snapshot %s%s', ticker, spot, asof, label));
 
     ax1 = nexttile(tl, 1, [2 1]);
     plot_surface(s, res, ax1);
@@ -120,9 +174,17 @@ function out = vol_surface(ticker, opts)
     xlabel(ax3, 'days to expiry'); ylabel(ax3, 'implied volatility');
     title(ax3, 'Term structure at the forward (k = 0)'); grid(ax3, 'on');
 
+    result = struct('ticker', ticker, 'csv', csv, 'chain', chain, 'res', res, ...
+                    'surface', s, 'smile', sl, 'term', ts, 'figure', fig, 'explainFigure', []);
+
+    % ---- 5. second figure: plain-English guide ------------------------------
+    if opts.Explain
+        result.explainFigure = explain_surface(result);
+        figure(fig);                              % keep the surface on top
+    end
+
     if nargout > 0
-        out = struct('csv', csv, 'chain', chain, 'res', res, 'surface', s, ...
-                     'smile', sl, 'term', ts, 'figure', fig);
+        out = result;
     end
 end
 
@@ -162,17 +224,17 @@ function py = findPython(userPy, root)
         strjoin(cand, newline + "  "));
 end
 
-function csv = runExporter(py, root, ticker, opts)
+function csv = runExporter(py, root, ticker, opts, session)
 % Run surface_export.py from the repo root; it prints the CSV path as its last line.
     oldDir = pwd;  restore = onCleanup(@() cd(oldDir));
     cd(root);
 
-    args = sprintf('--out snapshots --max-expiries %d --min-days %d', ...
-        opts.MaxExpiries, opts.MinDays);
+    args = sprintf('--out snapshots --max-expiries %d --min-days %d --session %s --prior-window-min %d', ...
+        opts.MaxExpiries, opts.MinDays, session, opts.PriorWindowMin);
     if ~opts.UseOCaml, args = [args ' --no-ocaml']; end
     cmd = sprintf('"%s" surface_export.py %s %s 2>&1', py, ticker, args);
 
-    fprintf('Fetching %s option chain (typically 10-60 s)...\n', ticker);
+    fprintf('Fetching %s option chain, %s session (typically 10-60 s)...\n', ticker, session);
     [status, txt] = system(cmd);
     lines = splitlines(strtrim(string(txt)));
     last  = strtrim(lines(end));
@@ -180,4 +242,11 @@ function csv = runExporter(py, root, ticker, opts)
         error('vol_surface:exportFailed', 'Python exporter failed (exit code %d):\n%s', status, txt);
     end
     csv = string(fullfile(root, last));
+end
+
+function t = firstLine(msg)
+% First line of an error message, shortened for a one-line status print.
+    ls = splitlines(string(msg));
+    t = ls(1);
+    if strlength(t) > 140, t = extractBefore(t, 138) + "..."; end
 end

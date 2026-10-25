@@ -1,0 +1,133 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{mathptmx}\usepackage[scaled=.92]{helvet}\usepackage{courier}\usepackage{microtype}\renewcommand{\familydefault}{\sfdefault}
+\usepackage{booktabs,tabularx,array,xcolor,graphicx,enumitem,fancyhdr,titlesec,listings,amsmath}
+\usepackage[hidelinks]{hyperref}
+\definecolor{accent}{HTML}{1F4E79}
+\definecolor{soft}{HTML}{EEF3F8}
+\definecolor{good}{HTML}{2E7D32}
+\titleformat{\section}{\large\bfseries\color{accent}}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\normalsize\bfseries\color{accent}}{\thesubsection}{0.6em}{}
+\setlength{\parindent}{0pt}\setlength{\parskip}{0.55em}
+\renewcommand{\arraystretch}{1.25}
+\pagestyle{fancy}\fancyhf{}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\lstset{basicstyle=\ttfamily\small,backgroundcolor=\color{soft},frame=none,breaklines=true,columns=fullflexible,keepspaces=true,xleftmargin=0.5em,aboveskip=0.6em,belowskip=0.4em}
+\newcommand{\code}[1]{\texttt{\small\detokenize{#1}}}
+\usepackage[most]{tcolorbox}
+\newtcolorbox{callout}[1]{colback=soft,colframe=accent,boxrule=0.5pt,arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt,title={#1},fonttitle=\bfseries}
+\usepackage{colortbl}
+\newcommand{\titleblock}[2]{\begin{center}{\LARGE\bfseries\color{accent}#1}\\[0.4em]{\large #2}\\[0.3em]{\small Kevin Williams \quad|\quad October 23, 2026}\end{center}\vspace{0.3em}}
+\begin{document}
+\titleblock{Volatility Surface Tool --- User Guide}{Type one ticker, get an interactive implied-volatility surface}
+
+\section{What this tool does}
+\code{vol_surface("AAPL")} downloads the current option chain for a stock, works out the \emph{implied volatility} of every liquid option, and draws three linked views: a 3-D surface, the ``smile'' for one expiry, and the term structure. A second window explains how to read all of it in plain language. Under the hood it connects a Python/OCaml option-pricing engine to MATLAB's symbolic and numerical tools.
+
+\begin{center}\includegraphics[width=0.92\linewidth]{vol_surface_aapl.png}\end{center}
+
+\section{Before you start}
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+\textbf{Need} & \textbf{Details}\\\midrule
+MATLAB & R2020a or newer, with the Symbolic Math Toolbox and the Statistics and Machine Learning Toolbox\\
+Python & A Python with \code{yfinance}, \code{pandas}, \code{numpy} and \code{scipy}. The tool looks in \code{<repo>/.venv}, then MATLAB's configured Python, then \code{python3}\\
+OCaml engine & Optional. Adds a second, independent volatility for cross-checking. Turn off with \code{"UseOCaml", false}\\
+Internet & Needed to fetch a chain from Yahoo Finance\\\bottomrule
+\end{tabularx}
+
+\section{Quick start}
+\begin{enumerate}[leftmargin=1.5em]
+\item In MATLAB, set the current folder to the repository's \code{matlab} folder.
+\item Run one line:
+\begin{lstlisting}
+vol_surface("AAPL")
+\end{lstlisting}
+\item Wait 10--60 seconds for the download. Two windows open: the surface figure and \emph{How to read the surface}.
+\end{enumerate}
+Ticker symbols may contain letters, digits, ``.'' and ``-'' (up to 10 characters). The tool writes a dated snapshot to \code{snapshots/} so you can reuse it later.
+
+\section{When to run it}
+Yahoo Finance serves only the \emph{current} chain, and it is meaningful when the market is open (9:30--16:00 Eastern, weekdays). Before the open most bids and asks are zero.
+
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+\textbf{Situation} & \textbf{Command}\\\midrule
+Market open (best) & \code{vol_surface("AAPL")}\\
+Too early in the day & \code{vol_surface("AAPL", "Session", "prior")} rebuilds yesterday's close from each option's last trade\\
+Not sure & \code{vol_surface("AAPL", "Session", "auto")} tries live, then falls back to the prior session\\
+Offline or repeat a run & \code{vol_surface("AAPL", "Refresh", false)} reuses the saved snapshot\\\bottomrule
+\end{tabularx}
+
+\textbf{Prior-session mode} keeps only trades from the last \code{PriorWindowMin} minutes (default 60) of the previous session and prices them against that session's closing price. It also works shortly after the open: the tool measures the share of contracts that have already traded today and refuses if that exceeds 20\%, because liquid contracts trade first and the sample would skew toward illiquid strikes. Prior surfaces are noisier than live ones, and the figure title says so.
+
+\section{Options}
+\begin{tabularx}{\linewidth}{@{}>{\ttfamily\small}l>{\ttfamily\small}lX@{}}
+\toprule
+\textbf{Name} & \textbf{Default} & \textbf{Meaning}\\\midrule
+Refresh & true & Fetch live data; false uses the cached snapshot. If a fetch fails and a cache exists, the cache is used with a warning\\
+Session & "live" & "live", "prior" or "auto" (see above)\\
+PriorWindowMin & 60 & Prior mode: keep trades from the last N minutes of that session\\
+MaxExpiries & 8 & Number of expiries to download\\
+MinDays & 7 & Skip expiries closer than this many days\\
+Expiry & "" & Expiry shown in the smile panel, e.g. "2026-11-20". Default: the expiry with the most quotes\\
+UseOCaml & true & Add the OCaml reference volatility and cross-check against it\\
+Python & "" & Path to a specific Python. Default: automatic search\\
+Explain & true & Open the plain-language explainer window\\\bottomrule
+\end{tabularx}
+
+Example combining several options:
+\begin{lstlisting}
+out = vol_surface("MSFT", "MaxExpiries", 6, "Expiry", "2026-11-20", "Explain", false);
+\end{lstlisting}
+
+\section{Reading the results}
+\begin{itemize}[leftmargin=1.5em]
+\item \textbf{Surface (left).} Height is implied volatility. The horizontal axes are how far the strike is from the current price (log-moneyness, 0 = at the forward) and days to expiry. Black dots are real quotes. Blank areas have no reliable data and are never extrapolated.
+\item \textbf{Smile (top right).} One expiry cut out of the surface, with the market quotes as dots.
+\item \textbf{Term structure (bottom right).} Volatility at the forward price across expiries.
+\item \textbf{Explainer window.} Six panels that define options, volatility, implied volatility, the smile and the term structure using this ticker's numbers.
+\end{itemize}
+The optional return value \code{out} is a struct with \code{csv}, \code{chain}, \code{res}, \code{surface}, \code{smile}, \code{term}, \code{figure} and \code{explainFigure}, handy for your own analysis.
+
+\section{Using the pieces separately}
+Any chain CSV works, not only the tool's own snapshots.
+\begin{lstlisting}
+res = run_vol_checks("snapshots/AAPL_latest.csv");   % solve + compare to OCaml
+s   = build_surface(res);                            % interpolated surface
+sl  = smile_slice(s, res, "2026-11-20");             % one expiry
+ts  = term_structure_slice(s, 0);                    % at-the-forward term structure
+\end{lstlisting}
+Required CSV columns (any case): \code{spot, expiry, T, r, type, strike} and either \code{mid} or both \code{bid} and \code{ask}. Optional: \code{q} (dividend yield, default 0), \code{symbol}, and \code{iv_ocaml} (reference volatility). \code{T} is years to expiry; \code{type} is call or put.
+
+\section{Checking that it works}
+\begin{lstlisting}
+test_vol_pipeline     % pricing, solver and pipeline, no network needed
+test_surface          % interpolation and slices against a known surface
+verify_demo           % one-page pass/fail verification report
+verify_demo("snapshots/AAPL_latest.csv")   % also compare a real snapshot to OCaml
+\end{lstlisting}
+The companion document \emph{Verification Process} explains each check.
+
+\section{Troubleshooting}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.38\linewidth}X@{}}
+\toprule
+\textbf{Message or symptom} & \textbf{What to do}\\\midrule
+``has only N usable out-of-the-money quote(s)'' & The chain is thin, usually before the open. Rerun when the market is open, use \code{"Session","prior"}, or pass \code{"Refresh", false}\\
+``\% of contracts have already traded since the prior session closed'' & Too much of today's trading has overwritten yesterday's prices. Use live mode\\
+``Python exporter failed'' & The Python found lacks \code{yfinance} or its relatives. Pass \code{"Python","/path/to/python"}\\
+``No cached snapshot at \ldots'' & There is nothing saved for this ticker and mode. Run once with \code{"Refresh", true}\\
+Dip in one short expiry & Few quotes with wide spreads; treat that expiry with caution\\
+Unknown ticker or empty chain & Check the symbol; some tickers have no listed options\\\bottomrule
+\end{tabularx}
+
+\section{Limitations}
+\begin{itemize}[leftmargin=1.5em]
+\item Black-Scholes with a constant dividend yield treats American single-stock options as European; the tool uses only out-of-the-money quotes to limit the effect.
+\item The surface is interpolated, not fitted with a no-arbitrage model. Treat it as a faithful picture of the quotes, not a tradable price list.
+\item Quote data comes from Yahoo Finance and may be delayed or stale.
+\item Educational use only; nothing here is investment advice.
+\end{itemize}
+\end{document}
